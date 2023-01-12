@@ -101,14 +101,14 @@ impl Checkable {
         }
     }
 
-    pub fn check(&self, t: &Type, context: &Context) -> Result<()> {
+    pub fn check(&self, t: &Type, context: &Context, environment: &Environment) -> Result<()> {
         match (self, t) {
             (Self::Function(a, b), Type::Universe(_i)) => {
-                a.check(t, context)?;
-                b.check(t, context)
+                a.check(t, context, environment)?;
+                b.check(t, context, environment)
             }
             (Self::Inferable(inferable), _) => {
-                let t_ = inferable.infer(context)?;
+                let t_ = inferable.infer(context, environment)?;
                 let ctx = context.iter().map(|(x, _)| x.to_owned()).collect();
 
                 if !t_.convert(&t, &ctx) {
@@ -125,8 +125,8 @@ impl Checkable {
                 Type::Function(a, b),
             ) => {
                 let mut ctx = context.to_owned();
-                ctx.insert(x.to_owned(), (a.as_ref().to_owned(), None));
-                body.check(b, &ctx)
+                ctx.insert(x.to_owned(), a.as_ref().to_owned());
+                body.check(b, &ctx, environment)
             }
             (
                 Self::Lambda {
@@ -138,20 +138,20 @@ impl Checkable {
                 let b = closure.apply(Value::Neutral(Neutral::Variable(0, x.to_owned())));
 
                 let mut ctx = context.to_owned();
-                ctx.insert(x.to_owned(), (a.as_ref().to_owned(), None));
+                ctx.insert(x.to_owned(), a.as_ref().to_owned());
 
-                body.check(&b, &ctx)
+                body.check(&b, &ctx, environment)
             }
             (Self::Lift(checkable), &Type::Universe(i @ 1..)) => {
-                checkable.check(&Type::Universe(i - 1), context)
+                checkable.check(&Type::Universe(i - 1), context, environment)
             }
             (Self::Pi(x, a, body), Type::Universe(_i)) => {
-                a.check(t, context)?;
+                a.check(t, context, environment)?;
 
                 let mut ctx = context.to_owned();
-                ctx.insert(x.to_owned(), (a.evaluate(&HashMap::new()), None));
+                ctx.insert(x.to_owned(), a.evaluate(environment));
 
-                body.check(t, &ctx)
+                body.check(t, &ctx, environment)
             }
             (&Self::Universe(i), &Type::Universe(j)) if i < j => Ok(()),
             _ => Err(eyre!("type mismatch")),

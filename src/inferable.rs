@@ -52,21 +52,21 @@ impl Inferable {
         }
     }
 
-    pub fn infer(&self, context: &Context) -> Result<Type> {
+    pub fn infer(&self, context: &Context, environment: &Environment) -> Result<Type> {
         match self {
             Self::Application { operator, operand } => {
-                let t = operator.infer(context)?;
+                let t = operator.infer(context, environment)?;
 
                 let Type::Function(ref a, b) = t else {
                     return Err(eyre!("illegal application"));
                 };
 
-                operand.check(a, context)?;
+                operand.check(a, context, environment)?;
 
                 Ok(*b)
             }
             Self::Lift(inferable) => {
-                let t = inferable.infer(context)?;
+                let t = inferable.infer(context, environment)?;
 
                 let Type::Universe(i) = t else {
                     return Err(eyre!("illegal lifting"));
@@ -74,11 +74,7 @@ impl Inferable {
 
                 Ok(Type::Universe(i + 1))
             }
-            Self::Variable(x) => context
-                .get(x)
-                .map(|(t, _)| t)
-                .cloned()
-                .wrap_err("unknown identifier"),
+            Self::Variable(x) => context.get(x).cloned().wrap_err("unknown identifier"),
         }
     }
 

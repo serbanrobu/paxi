@@ -14,7 +14,7 @@ type Identifier = String;
 
 type Type = Value;
 
-type Context = HashMap<Identifier, (Type, Option<Value>)>;
+type Context = HashMap<Identifier, Type>;
 
 type Environment = HashMap<Identifier, Value>;
 
@@ -31,24 +31,18 @@ mod tests {
 
         ctx.insert(
             "Void".to_owned(),
-            (
-                "U(0)"
-                    .parse::<Checkable>()
-                    .expect("should parse checkable")
-                    .evaluate(&env),
-                None,
-            ),
+            "U(0)"
+                .parse::<Checkable>()
+                .expect("should parse checkable")
+                .evaluate(&env),
         );
 
         ctx.insert(
             "Not".to_owned(),
-            (
-                "U(0) →  U(0)"
-                    .parse::<Checkable>()
-                    .expect("should parse checkable")
-                    .evaluate(&env),
-                None,
-            ),
+            "U(0) →  U(0)"
+                .parse::<Checkable>()
+                .expect("should parse checkable")
+                .evaluate(&env),
         );
 
         env.insert(
@@ -79,9 +73,10 @@ mod tests {
             let t: Checkable = t.parse().expect("should parse checkable");
             let a: Checkable = a.parse().expect("should parse checkable");
 
-            t.check(&Type::Universe(i), &ctx)
+            t.check(&Type::Universe(i), &ctx, &env)
                 .expect("should parse checkable");
-            a.check(&t.evaluate(&env), &ctx)
+
+            a.check(&t.evaluate(&env), &ctx, &env)
                 .expect("should parse checkable");
         }
     }
