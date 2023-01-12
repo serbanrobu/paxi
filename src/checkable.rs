@@ -25,7 +25,7 @@ pub enum Checkable {
 }
 
 impl Checkable {
-    fn reduce(&self, environment: &Environment) -> Checkable {
+    pub fn reduce(&self, environment: &Environment) -> Checkable {
         self.reduce_(environment, 0)
     }
 
