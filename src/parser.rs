@@ -8,7 +8,7 @@ use nom::{
     IResult,
 };
 
-use crate::{Checkable, Identifier, Inferable};
+use crate::{checkable::Checkable, inferable::Inferable, Identifier};
 
 fn parse_identifier(input: &str) -> IResult<&str, Identifier> {
     map(
@@ -33,11 +33,12 @@ fn parse_application(input: &str) -> IResult<&str, Inferable> {
     fold_many0(
         parens(separated_list1(char(','), ws(parse_checkable))),
         move || atom.clone(),
-        |fun, args| {
-            args.into_iter()
-                .fold(fun, |fun, arg| Inferable::Application {
-                    function: fun.into(),
-                    argument: arg.into(),
+        |operator, operands| {
+            operands
+                .into_iter()
+                .fold(operator, |operator, operand| Inferable::Application {
+                    operator: operator.into(),
+                    operand: operand.into(),
                 })
         },
     )(input)
