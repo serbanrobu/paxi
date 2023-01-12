@@ -1,10 +1,10 @@
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1},
+    character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, u8},
     combinator::{map, recognize},
     multi::{fold_many0, many0, separated_list1},
-    sequence::{delimited, pair, preceded},
+    sequence::{delimited, pair, preceded, separated_pair},
     IResult,
 };
 
@@ -20,15 +20,15 @@ fn parse_identifier(input: &str) -> IResult<&str, Identifier> {
     )(input)
 }
 
-fn parse_atom(input: &str) -> IResult<&str, Inferable> {
+fn parse_inferable_atom(input: &str) -> IResult<&str, Inferable> {
     alt((
-        parens(ws(parse_inferable)),
         map(parse_identifier, Inferable::Variable),
+        parens(ws(parse_inferable)),
     ))(input)
 }
 
-fn parse_inferable(input: &str) -> IResult<&str, Inferable> {
-    let (input, atom) = parse_atom(input)?;
+fn parse_application(input: &str) -> IResult<&str, Inferable> {
+    let (input, atom) = parse_inferable_atom(input)?;
 
     fold_many0(
         parens(separated_list1(char(','), ws(parse_checkable))),
@@ -43,9 +43,52 @@ fn parse_inferable(input: &str) -> IResult<&str, Inferable> {
     )(input)
 }
 
-pub fn parse_checkable(input: &str) -> IResult<&str, Checkable> {
+fn parse_inferable_lifting(input: &str) -> IResult<&str, Inferable> {
     alt((
+        map(preceded(char('↑'), parse_inferable_lifting), |a| {
+            Inferable::Lift(a.into())
+        }),
+        parse_application,
+    ))(input)
+}
+
+fn parse_inferable(input: &str) -> IResult<&str, Inferable> {
+    parse_inferable_lifting(input)
+}
+
+fn parse_checkable_atom(input: &str) -> IResult<&str, Checkable> {
+    alt((
+        map(preceded(char('U'), parens(ws(u8))), |i| {
+            Checkable::Universe(i)
+        }),
+        map(parse_inferable, Checkable::Inferable),
         parens(ws(parse_checkable)),
+    ))(input)
+}
+
+fn parse_checkable_lifting(input: &str) -> IResult<&str, Checkable> {
+    alt((
+        map(preceded(char('↑'), parse_checkable_lifting), |a| {
+            Checkable::Lift(a.into())
+        }),
+        parse_checkable_atom,
+    ))(input)
+}
+
+fn parse_function(input: &str) -> IResult<&str, Checkable> {
+    map(
+        separated_list1(ws(tag("→ ")), parse_checkable_lifting),
+        |list: Vec<_>| {
+            list.into_iter()
+                .rev()
+                .reduce(|b, a| Checkable::Function(a.into(), b.into()))
+                .unwrap()
+        },
+    )(input)
+}
+
+fn parse_abstraction(input: &str) -> IResult<&str, Checkable> {
+    alt((
         map(
             pair(
                 preceded(pair(char('λ'), multispace1), parse_identifier),
@@ -56,8 +99,26 @@ pub fn parse_checkable(input: &str) -> IResult<&str, Checkable> {
                 body: body.into(),
             },
         ),
-        map(parse_inferable, Checkable::Inferable),
+        map(
+            pair(
+                preceded(
+                    pair(char('Π'), multispace1),
+                    parens(separated_pair(
+                        ws(parse_identifier),
+                        char(':'),
+                        ws(parse_checkable),
+                    )),
+                ),
+                preceded(pair(char('.'), multispace0), parse_checkable),
+            ),
+            |((x, a), body)| Checkable::Pi(x, a.into(), body.into()),
+        ),
+        parse_function,
     ))(input)
+}
+
+pub fn parse_checkable(input: &str) -> IResult<&str, Checkable> {
+    parse_abstraction(input)
 }
 
 pub fn parens<'a, F, O>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O>
