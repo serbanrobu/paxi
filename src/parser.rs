@@ -22,6 +22,24 @@ fn parse_identifier(input: &str) -> IResult<&str, Identifier> {
 
 fn parse_inferable_atom(input: &str) -> IResult<&str, Inferable> {
     alt((
+        map(
+            preceded(
+                pair(tag("term"), multispace0),
+                parens(separated_pair(
+                    ws(parse_inferable),
+                    char(','),
+                    ws(parse_checkable),
+                )),
+            ),
+            |(t, a)| Inferable::Term(t.into(), a.into()),
+        ),
+        map(
+            preceded(
+                pair(tag("Type"), multispace0),
+                parens(separated_pair(ws(u8), char(','), ws(parse_checkable))),
+            ),
+            |(i, t)| Inferable::Type(i, t.into()),
+        ),
         map(parse_identifier, Inferable::Variable),
         parens(ws(parse_inferable)),
     ))(input)
@@ -53,15 +71,16 @@ fn parse_inferable_lifting(input: &str) -> IResult<&str, Inferable> {
     ))(input)
 }
 
-fn parse_inferable(input: &str) -> IResult<&str, Inferable> {
+pub fn parse_inferable(input: &str) -> IResult<&str, Inferable> {
     parse_inferable_lifting(input)
 }
 
 fn parse_checkable_atom(input: &str) -> IResult<&str, Checkable> {
     alt((
-        map(preceded(char('U'), parens(ws(u8))), |i| {
-            Checkable::Universe(i)
-        }),
+        map(
+            preceded(pair(char('U'), multispace0), parens(ws(u8))),
+            |i| Checkable::Universe(i),
+        ),
         map(parse_inferable, Checkable::Inferable),
         parens(ws(parse_checkable)),
     ))(input)

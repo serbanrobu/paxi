@@ -168,7 +168,7 @@ impl Checkable {
                 a.evaluate_(environment, lift).into(),
                 b.evaluate_(environment, lift).into(),
             ),
-            Self::Inferable(inferable) => inferable.evaluate(environment, lift),
+            Self::Inferable(inferable) => inferable.evaluate_(environment, lift),
             Self::Lambda {
                 identifier: x,
                 body,

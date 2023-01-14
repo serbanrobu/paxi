@@ -1,4 +1,4 @@
-use pax::{checkable::Checkable, Context, Environment, Type};
+use pax::{checkable::Checkable, inferable::Inferable, Context, Environment, Type};
 
 #[test]
 fn check() {
@@ -54,6 +54,41 @@ fn check() {
 
         a.check(&t.evaluate(&env), &ctx, &env)
             .expect("should parse checkable");
+    }
+}
+
+#[test]
+fn infer() {
+    let env = Environment::new();
+    let mut ctx = Context::new();
+
+    ctx.insert(
+        "Unit".to_owned(),
+        "U(0)"
+            .parse::<Checkable>()
+            .expect("should parse checkable")
+            .evaluate(&env),
+    );
+
+    ctx.insert(
+        "unit".to_owned(),
+        "Unit"
+            .parse::<Checkable>()
+            .expect("should parse checkable")
+            .evaluate(&env),
+    );
+
+    let samples = [
+        "Type(1, U(0))",
+        "term(Unit, unit)",
+        "term(Type(100, U(10)), U(1))",
+        "Type(3, ↑↑↑Unit)",
+        "term(Type(1, U(0)), Unit)",
+    ];
+
+    for sample in samples {
+        let a: Inferable = sample.parse().expect("should parse inferable");
+        a.infer(&ctx, &env).expect("should infer type");
     }
 }
 
