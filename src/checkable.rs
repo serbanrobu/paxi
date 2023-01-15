@@ -8,7 +8,7 @@ use crate::{
     inferable::Inferable,
     parser,
     value::{Closure, Neutral, Value},
-    Context, Environment, Identifier, Level, Lift, Type,
+    Context, Environment, Identifier, Type,
 };
 
 #[derive(Clone, Debug)]
@@ -19,30 +19,24 @@ pub enum Checkable {
         identifier: Identifier,
         body: Box<Checkable>,
     },
-    Lift(Box<Checkable>),
+    Natural,
     Pi(Identifier, Box<Checkable>, Box<Checkable>),
-    Universe(Level),
+    Successor(Box<Checkable>),
+    Universe(Box<Checkable>),
+    Zero,
 }
 
 impl Checkable {
     pub fn reduce(&self, environment: &Environment) -> Checkable {
-        self.reduce_(environment, 0)
-    }
-
-    fn reduce_(&self, environment: &Environment, lift: Lift) -> Checkable {
         let ctx = environment.keys().collect();
-        self.evaluate_(environment, lift).quote(&ctx)
+        self.evaluate(environment).quote(&ctx)
     }
 
     pub fn convert(&self, other: &Self, environment: &Environment) -> bool {
-        self.convert_(other, environment, 0)
-    }
-
-    fn convert_(&self, other: &Self, environment: &Environment, lift: Lift) -> bool {
         let ctx = environment.keys().collect();
 
-        self.evaluate_(environment, lift)
-            .convert(&other.evaluate_(environment, lift), &ctx)
+        self.evaluate(environment)
+            .convert(&other.evaluate(environment), &ctx)
     }
 
     pub fn alpha_eq(&self, other: &Self) -> bool {
@@ -82,9 +76,7 @@ impl Checkable {
 
                 body.alpha_eq_(body_, index + 1, &ctx, &ctx_)
             }
-            (Self::Lift(checkable), Self::Lift(checkable_)) => {
-                checkable.alpha_eq_(checkable_, index, context, context_)
-            }
+            (Self::Natural, Self::Natural) => true,
             (Self::Pi(x, a, body), Self::Pi(y, a_, body_)) => {
                 a.alpha_eq_(a_, index, context, context_) && {
                     let mut ctx = context.to_owned();
@@ -96,7 +88,9 @@ impl Checkable {
                     body.alpha_eq_(body_, index + 1, &ctx, &ctx_)
                 }
             }
-            (Self::Universe(i), Self::Universe(j)) => i == j,
+            (Self::Successor(n), Self::Successor(n_)) => n.alpha_eq_(n_, index, context, context_),
+            (Self::Universe(i), Self::Universe(j)) => i.alpha_eq_(j, index, context, context_),
+            (Self::Zero, Self::Zero) => true,
             _ => false,
         }
     }
@@ -110,6 +104,15 @@ impl Checkable {
             (Self::Inferable(inferable), _) => {
                 let t_ = inferable.infer(context, environment)?;
                 let ctx = context.iter().map(|(x, _)| x.to_owned()).collect();
+
+                // Coercion
+                if let (Type::Universe(i), Type::Universe(j)) = (&t_, t) {
+                    if j.lt(i, &ctx) {
+                        return Err(eyre!("type mismatch"));
+                    }
+
+                    return Ok(());
+                }
 
                 if !t_.convert(&t, &ctx) {
                     return Err(eyre!("type mismatch"));
@@ -135,16 +138,14 @@ impl Checkable {
                 },
                 Type::Pi(a, closure),
             ) => {
-                let b = closure.apply(Value::Neutral(Neutral::Variable(0, x.to_owned())));
+                let b = closure.apply(Value::Neutral(Neutral::Variable(x.to_owned())));
 
                 let mut ctx = context.to_owned();
                 ctx.insert(x.to_owned(), a.as_ref().to_owned());
 
                 body.check(&b, &ctx, environment)
             }
-            (Self::Lift(checkable), &Type::Universe(i @ 1..)) => {
-                checkable.check(&Type::Universe(i - 1), context, environment)
-            }
+            (Self::Natural, Type::Universe(_i)) => Ok(()),
             (Self::Pi(x, a, body), Type::Universe(_i)) => {
                 a.check(t, context, environment)?;
 
@@ -153,42 +154,50 @@ impl Checkable {
 
                 body.check(t, &ctx, environment)
             }
-            (&Self::Universe(i), &Type::Universe(j)) if i < j => Ok(()),
+            (Self::Successor(n), Type::Natural) => n.check(t, context, environment),
+            (Self::Universe(i), Type::Universe(j)) => {
+                i.check(&Type::Natural, context, environment)?;
+                let i = i.evaluate(environment);
+                let ctx = context.iter().map(|(x, _)| x.to_owned()).collect();
+
+                if j.lte(&i, &ctx) {
+                    return Err(eyre!("type mismatch"));
+                }
+
+                Ok(())
+            }
+            (Self::Zero, Type::Natural) => Ok(()),
             _ => Err(eyre!("type mismatch")),
         }
     }
 
     pub fn evaluate(&self, environment: &Environment) -> Value {
-        self.evaluate_(environment, 0)
-    }
-
-    pub fn evaluate_(&self, environment: &Environment, lift: Lift) -> Value {
         match self {
             Self::Function(a, b) => Value::Function(
-                a.evaluate_(environment, lift).into(),
-                b.evaluate_(environment, lift).into(),
+                a.evaluate(environment).into(),
+                b.evaluate(environment).into(),
             ),
-            Self::Inferable(inferable) => inferable.evaluate_(environment, lift),
+            Self::Inferable(inferable) => inferable.evaluate(environment),
             Self::Lambda {
                 identifier: x,
                 body,
             } => Value::Lambda(Closure {
                 environment: environment.to_owned(),
-                lift,
                 identifier: x.to_owned(),
                 body: body.as_ref().to_owned(),
             }),
-            Self::Lift(checkable) => checkable.evaluate_(environment, lift + 1),
+            Self::Natural => Value::Natural,
             Self::Pi(x, a, body) => Value::Pi(
-                a.evaluate_(environment, lift).into(),
+                a.evaluate(environment).into(),
                 Closure {
                     environment: environment.to_owned(),
-                    lift,
                     identifier: x.to_owned(),
                     body: body.as_ref().to_owned(),
                 },
             ),
-            &Self::Universe(i) => Value::Universe(i),
+            Self::Successor(n) => Value::Successor(n.evaluate(environment).into()),
+            Self::Universe(i) => Value::Universe(i.evaluate(environment).into()),
+            Self::Zero => Value::Zero,
         }
     }
 }

@@ -6,10 +6,6 @@ pub mod value;
 use im_rc::HashMap;
 use value::Value;
 
-pub type Level = u8;
-
-pub type Lift = u8;
-
 pub type Identifier = String;
 
 pub type Type = Value;

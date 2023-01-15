@@ -1,4 +1,4 @@
-use pax::{checkable::Checkable, inferable::Inferable, Context, Environment, Type};
+use pax::{checkable::Checkable, Context, Environment, Type};
 
 #[test]
 fn check() {
@@ -30,65 +30,30 @@ fn check() {
     );
 
     let samples = [
-        ("λ _A. λ a. a", "Π (A : U(0)). ↑(A →  A)", 1),
         (
             "λ _A. λ _B. λ a. λ _b. a",
-            "Π (A : U(0)). Π (B : U(0)). ↑(A →  B →  A)",
-            1,
+            "Π (A : U(0)). Π (B : U(0)). A →  B →  A",
+            "1",
         ),
-        ("U(1) →  U(2)", "U(3)", 4),
-        ("U(0)", "U(100)", 101),
+        ("U(1) →  U(2)", "U(3)", "4"),
+        ("U(0)", "U(10)", "11"),
         (
             "λ _P. λ _Q. λ pq. λ nq. λ p. nq(pq(p))",
-            "Π (P : U(0)). Π (Q : U(0)). ↑((P →  Q) →  Not(Q) →  Not(P))",
-            1,
+            "Π (P : U(0)). Π (Q : U(0)). (P →  Q) →  Not(Q) →  Not(P)",
+            "1",
         ),
     ];
 
     for (a, t, i) in samples {
         let t: Checkable = t.parse().expect("should parse checkable");
         let a: Checkable = a.parse().expect("should parse checkable");
+        let i: Checkable = i.parse().expect("should parse checkable");
 
-        t.check(&Type::Universe(i), &ctx, &env)
+        t.check(&Type::Universe(i.evaluate(&env).into()), &ctx, &env)
             .expect("should parse checkable");
 
         a.check(&t.evaluate(&env), &ctx, &env)
-            .expect("should parse checkable");
-    }
-}
-
-#[test]
-fn infer() {
-    let env = Environment::new();
-    let mut ctx = Context::new();
-
-    ctx.insert(
-        "Unit".to_owned(),
-        "U(0)"
-            .parse::<Checkable>()
-            .expect("should parse checkable")
-            .evaluate(&env),
-    );
-
-    ctx.insert(
-        "unit".to_owned(),
-        "Unit"
-            .parse::<Checkable>()
-            .expect("should parse checkable")
-            .evaluate(&env),
-    );
-
-    let samples = [
-        "Type(1, U(0))",
-        "term(Unit, unit)",
-        "term(Type(100, U(10)), U(1))",
-        "Type(3, ↑↑↑Unit)",
-        "term(Type(1, U(0)), Unit)",
-    ];
-
-    for sample in samples {
-        let a: Inferable = sample.parse().expect("should parse inferable");
-        a.infer(&ctx, &env).expect("should infer type");
+            .expect("should check checkable");
     }
 }
 
@@ -114,7 +79,6 @@ fn convert() {
     let samples = [
         ("λ x. id(x)", "λ y. y"),
         ("λ x. f(x)", "f"),
-        ("↑A(B)", "(↑A)(↑B)"),
         ("(A →  B) →  (C →  D)", "(A →  B) →  C →  D"),
     ];
 

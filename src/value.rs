@@ -1,6 +1,6 @@
 use im_rc::HashSet;
 
-use crate::{checkable::Checkable, inferable::Inferable, Environment, Identifier, Level, Lift};
+use crate::{checkable::Checkable, inferable::Inferable, Environment, Identifier};
 
 #[derive(Clone, Debug)]
 pub enum Neutral {
@@ -8,7 +8,7 @@ pub enum Neutral {
         operator: Box<Neutral>,
         operand: Box<Value>,
     },
-    Variable(Lift, Identifier),
+    Variable(Identifier),
 }
 
 impl Neutral {
@@ -18,10 +18,7 @@ impl Neutral {
                 operator: operator.quote(context).into(),
                 operand: operand.quote(context).into(),
             },
-            Self::Variable(lift, x) => (0..*lift)
-                .fold(Inferable::Variable(x.to_owned()), |a, _| {
-                    Inferable::Lift(a.into())
-                }),
+            Self::Variable(x) => Inferable::Variable(x.to_owned()),
         }
     }
 }
@@ -30,14 +27,33 @@ impl Neutral {
 pub enum Value {
     Lambda(Closure),
     Function(Box<Value>, Box<Value>),
+    Natural,
     Neutral(Neutral),
     Pi(Box<Value>, Closure),
-    Universe(Level),
+    Successor(Box<Value>),
+    Universe(Box<Value>),
+    Zero,
 }
 
 impl Value {
     pub fn convert(&self, other: &Self, context: &HashSet<Identifier>) -> bool {
         self.quote(context).alpha_eq(&other.quote(context))
+    }
+
+    pub fn lt(&self, other: &Value, context: &HashSet<Identifier>) -> bool {
+        let Value::Successor(other) = other else {
+            return false;
+        };
+
+        self.lte(other, context)
+    }
+
+    pub fn lte(&self, other: &Value, context: &HashSet<Identifier>) -> bool {
+        match (self, other) {
+            (Value::Zero, Value::Successor(_b)) => true,
+            (Value::Successor(a), Value::Successor(b)) => a.lte(b, context),
+            (a, b) => a.convert(b, context),
+        }
     }
 
     pub fn quote(&self, context: &HashSet<Identifier>) -> Checkable {
@@ -61,12 +77,15 @@ impl Value {
             Self::Function(a, b) => {
                 Checkable::Function(a.quote(context).into(), b.quote(context).into())
             }
+            Self::Natural => Checkable::Natural,
             Self::Neutral(neutral) => Checkable::Inferable(neutral.quote(context)),
             Self::Pi(a, closure) => {
                 let (identifier, body) = closure.quote(context);
                 Checkable::Pi(identifier, a.quote(context).into(), body.into())
             }
-            &Self::Universe(i) => Checkable::Universe(i),
+            Self::Successor(n) => Checkable::Successor(n.quote(context).into()),
+            Self::Universe(i) => Checkable::Universe(i.quote(context).into()),
+            Self::Zero => Checkable::Zero,
         }
     }
 }
@@ -74,7 +93,6 @@ impl Value {
 #[derive(Clone, Debug)]
 pub struct Closure {
     pub environment: Environment,
-    pub lift: Lift,
     pub identifier: Identifier,
     pub body: Checkable,
 }
@@ -94,12 +112,12 @@ impl Closure {
     pub fn apply(&self, operand: Value) -> Value {
         let mut env = self.environment.to_owned();
         env.insert(self.identifier.to_owned(), operand);
-        self.body.to_owned().evaluate_(&env, self.lift)
+        self.body.to_owned().evaluate(&env)
     }
 
     fn quote(&self, context: &HashSet<Identifier>) -> (Identifier, Checkable) {
         let x = freshen(&self.identifier, context);
-        let body = self.apply(Value::Neutral(Neutral::Variable(0, x.clone())));
+        let body = self.apply(Value::Neutral(Neutral::Variable(x.clone())));
         let mut ctx = context.to_owned();
         ctx.insert(x.clone());
 
