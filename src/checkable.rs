@@ -95,14 +95,20 @@ impl Checkable {
         }
     }
 
-    pub fn check(&self, t: &Type, context: &Context, environment: &Environment) -> Result<()> {
+    pub fn check(
+        &self,
+        level: &Value,
+        t: &Type,
+        context: &Context,
+        environment: &Environment,
+    ) -> Result<()> {
         match (self, t) {
             (Self::Function(a, b), Type::Universe(_i)) => {
-                a.check(t, context, environment)?;
-                b.check(t, context, environment)
+                a.check(level, t, context, environment)?;
+                b.check(level, t, context, environment)
             }
             (Self::Inferable(inferable), _) => {
-                let t_ = inferable.infer(context, environment)?;
+                let t_ = inferable.infer(level, context, environment)?;
                 let ctx = context.iter().map(|(x, _)| x.to_owned()).collect();
 
                 // Coercion
@@ -129,7 +135,7 @@ impl Checkable {
             ) => {
                 let mut ctx = context.to_owned();
                 ctx.insert(x.to_owned(), a.as_ref().to_owned());
-                body.check(b, &ctx, environment)
+                body.check(level, b, &ctx, environment)
             }
             (
                 Self::Lambda {
@@ -143,20 +149,20 @@ impl Checkable {
                 let mut ctx = context.to_owned();
                 ctx.insert(x.to_owned(), a.as_ref().to_owned());
 
-                body.check(&b, &ctx, environment)
+                body.check(level, &b, &ctx, environment)
             }
             (Self::Natural, Type::Universe(_i)) => Ok(()),
             (Self::Pi(x, a, body), Type::Universe(_i)) => {
-                a.check(t, context, environment)?;
+                a.check(level, t, context, environment)?;
 
                 let mut ctx = context.to_owned();
                 ctx.insert(x.to_owned(), a.evaluate(environment));
 
-                body.check(t, &ctx, environment)
+                body.check(level, t, &ctx, environment)
             }
-            (Self::Successor(n), Type::Natural) => n.check(t, context, environment),
+            (Self::Successor(n), Type::Natural) => n.check(level, t, context, environment),
             (Self::Universe(i), Type::Universe(j)) => {
-                i.check(&Type::Natural, context, environment)?;
+                i.check(level, &Type::Natural, context, environment)?;
                 let i = i.evaluate(environment);
                 let ctx = context.iter().map(|(x, _)| x.to_owned()).collect();
 

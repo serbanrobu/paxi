@@ -8,6 +8,15 @@ pub enum Neutral {
         operator: Box<Neutral>,
         operand: Box<Value>,
     },
+    NaturalInduction {
+        x: Identifier,
+        motive: Box<Value>,
+        base: Box<Value>,
+        y: Identifier,
+        z: Identifier,
+        step: Box<Value>,
+        target: Box<Neutral>,
+    },
     Variable(Identifier),
 }
 
@@ -17,6 +26,23 @@ impl Neutral {
             Self::Application { operator, operand } => Inferable::Application {
                 operator: operator.quote(context).into(),
                 operand: operand.quote(context).into(),
+            },
+            Self::NaturalInduction {
+                x,
+                motive,
+                base,
+                y,
+                z,
+                step,
+                target,
+            } => Inferable::NaturalInduction {
+                x: x.to_owned(),
+                motive: motive.quote(context).into(),
+                base: base.quote(context).into(),
+                y: y.to_owned(),
+                z: z.to_owned(),
+                step: step.quote(context).into(),
+                target: Checkable::Inferable(target.quote(context)).into(),
             },
             Self::Variable(x) => Inferable::Variable(x.to_owned()),
         }
@@ -36,6 +62,17 @@ pub enum Value {
 }
 
 impl Value {
+    pub fn apply(&self, operand: Value) -> Value {
+        match self {
+            Self::Lambda(closure) => closure.apply(operand),
+            Self::Neutral(neutral) => Value::Neutral(Neutral::Application {
+                operator: neutral.to_owned().into(),
+                operand: operand.into(),
+            }),
+            _ => unreachable!(),
+        }
+    }
+
     pub fn convert(&self, other: &Self, context: &HashSet<Identifier>) -> bool {
         self.quote(context).alpha_eq(&other.quote(context))
     }

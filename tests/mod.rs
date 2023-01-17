@@ -1,32 +1,24 @@
-use pax::{checkable::Checkable, Context, Environment, Type};
+use color_eyre::Result;
+use pax::{checkable::Checkable, value::Value, Context, Environment, Type};
 
 #[test]
-fn check() {
+fn check() -> Result<()> {
     let mut env = Environment::new();
     let mut ctx = Context::new();
 
     ctx.insert(
         "Void".to_owned(),
-        "U(0)"
-            .parse::<Checkable>()
-            .expect("should parse checkable")
-            .evaluate(&env),
+        "U(0)".parse::<Checkable>()?.evaluate(&env),
     );
 
     ctx.insert(
         "Not".to_owned(),
-        "U(0) →  U(0)"
-            .parse::<Checkable>()
-            .expect("should parse checkable")
-            .evaluate(&env),
+        "U(0) →  U(0)".parse::<Checkable>()?.evaluate(&env),
     );
 
     env.insert(
         "Not".to_owned(),
-        "λ A. A →  Void"
-            .parse::<Checkable>()
-            .expect("should parse checkable")
-            .evaluate(&env),
+        "λ A. A →  Void".parse::<Checkable>()?.evaluate(&env),
     );
 
     let samples = [
@@ -45,35 +37,36 @@ fn check() {
     ];
 
     for (a, t, i) in samples {
-        let t: Checkable = t.parse().expect("should parse checkable");
-        let a: Checkable = a.parse().expect("should parse checkable");
-        let i: Checkable = i.parse().expect("should parse checkable");
+        let t: Checkable = t.parse()?;
+        let a: Checkable = a.parse()?;
+        let i = i.parse::<Checkable>()?.evaluate(&env);
 
-        t.check(&Type::Universe(i.evaluate(&env).into()), &ctx, &env)
-            .expect("should parse checkable");
-
-        a.check(&t.evaluate(&env), &ctx, &env)
-            .expect("should check checkable");
+        t.check(&i, &Type::Universe(i.clone().into()), &ctx, &env)?;
+        a.check(&i, &t.evaluate(&env), &ctx, &env)?;
     }
+
+    Ok(())
 }
 
 #[test]
-fn alpha_eq() {
+fn alpha_eq() -> Result<()> {
     let samples = [("λ x. f(x)", "λ y. f(y)")];
 
     for (a, b) in samples {
-        let a: Checkable = a.parse().expect("should parse checkable");
-        let b: Checkable = b.parse().expect("should parse checkable");
+        let a: Checkable = a.parse()?;
+        let b: Checkable = b.parse()?;
 
         assert!(a.alpha_eq(&b));
     }
+
+    Ok(())
 }
 
 #[test]
-fn convert() {
+fn convert() -> Result<()> {
     let mut env = Environment::new();
 
-    let id: Checkable = "λ x. x".parse().expect("should parse checkable");
+    let id: Checkable = "λ x. x".parse()?;
     env.insert("id".to_owned(), id.evaluate(&env));
 
     let samples = [
@@ -83,9 +76,40 @@ fn convert() {
     ];
 
     for (a, b) in samples {
-        let a: Checkable = a.parse().expect("should parse checkable");
-        let b: Checkable = b.parse().expect("should parse checkable");
+        let a: Checkable = a.parse()?;
+        let b: Checkable = b.parse()?;
 
         assert!(a.convert(&b, &env));
     }
+
+    Ok(())
+}
+
+#[test]
+fn natural_induction() -> Result<()> {
+    let mut env = Environment::new();
+    let mut ctx = Context::new();
+    let level = Value::Zero;
+
+    let add: Checkable =
+        "λ m. indNat(_m. Nat →  Nat, λ n. n, _m. g. λ n. succ(g(n)), m)".parse()?;
+
+    let t = Type::Function(
+        Type::Natural.into(),
+        Type::Function(Type::Natural.into(), Type::Natural.into()).into(),
+    );
+
+    add.check(&level, &t, &ctx, &env)?;
+    ctx.insert("add".to_owned(), t);
+    env.insert("add".to_owned(), add.evaluate(&env));
+
+    let sum: Checkable = "add(3, 4)".parse()?;
+    sum.check(&level, &Type::Natural, &ctx, &env)?;
+
+    assert!(sum.evaluate(&env).convert(
+        &"7".parse::<Checkable>()?.evaluate(&env),
+        &ctx.iter().map(|(x, _)| x).collect()
+    ));
+
+    Ok(())
 }

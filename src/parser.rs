@@ -4,7 +4,7 @@ use nom::{
     character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, u64},
     combinator::{map, recognize, value},
     multi::{fold_many0, many0, separated_list1},
-    sequence::{delimited, pair, preceded, separated_pair},
+    sequence::{delimited, pair, preceded, separated_pair, tuple},
     IResult,
 };
 
@@ -23,6 +23,29 @@ fn parse_identifier(input: &str) -> IResult<&str, Identifier> {
 fn parse_inferable_atom(input: &str) -> IResult<&str, Inferable> {
     alt((
         parens(ws(parse_inferable)),
+        map(
+            preceded(
+                pair(tag("indNat"), multispace0),
+                parens(tuple((
+                    ws(parse_identifier),
+                    preceded(char('.'), ws(parse_checkable)),
+                    preceded(char(','), ws(parse_checkable)),
+                    preceded(char(','), ws(parse_identifier)),
+                    preceded(char('.'), ws(parse_identifier)),
+                    preceded(char('.'), ws(parse_checkable)),
+                    preceded(char(','), ws(parse_checkable)),
+                ))),
+            ),
+            |(x, motive, base, y, z, step, target)| Inferable::NaturalInduction {
+                x,
+                motive: motive.into(),
+                base: base.into(),
+                y,
+                z,
+                step: step.into(),
+                target: target.into(),
+            },
+        ),
         map(parse_identifier, Inferable::Variable),
     ))(input)
 }
