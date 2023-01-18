@@ -91,18 +91,6 @@ fn parse_checkable_atom(input: &str) -> IResult<&str, Checkable> {
     ))(input)
 }
 
-fn parse_function(input: &str) -> IResult<&str, Checkable> {
-    map(
-        separated_list1(ws(tag("→ ")), parse_checkable_atom),
-        |list: Vec<_>| {
-            list.into_iter()
-                .rev()
-                .reduce(|b, a| Checkable::Function(a.into(), b.into()))
-                .unwrap()
-        },
-    )(input)
-}
-
 fn parse_abstraction(input: &str) -> IResult<&str, Checkable> {
     alt((
         map(
@@ -129,12 +117,24 @@ fn parse_abstraction(input: &str) -> IResult<&str, Checkable> {
             ),
             |((x, a), body)| Checkable::Pi(x, a.into(), body.into()),
         ),
-        parse_function,
+        parse_checkable_atom,
     ))(input)
 }
 
+fn parse_function(input: &str) -> IResult<&str, Checkable> {
+    map(
+        separated_list1(ws(tag("→ ")), parse_abstraction),
+        |list: Vec<_>| {
+            list.into_iter()
+                .rev()
+                .reduce(|b, a| Checkable::Function(a.into(), b.into()))
+                .unwrap()
+        },
+    )(input)
+}
+
 pub fn parse_checkable(input: &str) -> IResult<&str, Checkable> {
-    parse_abstraction(input)
+    parse_function(input)
 }
 
 pub fn parens<'a, F, O>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O>

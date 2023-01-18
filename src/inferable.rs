@@ -110,13 +110,17 @@ impl Inferable {
             Self::Application { operator, operand } => {
                 let t = operator.infer(level, context, environment)?;
 
-                let Type::Function(ref a, b) = t else {
-                    return Err(eyre!("illegal application"));
-                };
-
-                operand.check(level, a, context, environment)?;
-
-                Ok(*b)
+                match t {
+                    Type::Function(ref a, b) => {
+                        operand.check(level, a, context, environment)?;
+                        Ok(*b)
+                    }
+                    Type::Pi(ref a, body) => {
+                        operand.check(level, a, context, environment)?;
+                        Ok(body.apply(operand.evaluate(environment)))
+                    }
+                    _ => Err(eyre!("illegal application")),
+                }
             }
             Self::NaturalInduction {
                 x,
