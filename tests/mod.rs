@@ -1,5 +1,6 @@
 use color_eyre::Result;
-use pax::{checkable::Checkable, Context, Environment, Type};
+use im_rc::HashSet;
+use pax::{checkable::Checkable, Context, Environment, Identifier, Type};
 
 #[test]
 fn check() -> Result<()> {
@@ -64,6 +65,7 @@ fn alpha_eq() -> Result<()> {
 #[test]
 fn convert() -> Result<()> {
     let mut env = Environment::new();
+    let ctx = HashSet::<Identifier>::new();
 
     let id: Checkable = "λ x. x".parse()?;
     env.insert("id".to_owned(), id.evaluate(&env));
@@ -78,7 +80,7 @@ fn convert() -> Result<()> {
         let a: Checkable = a.parse()?;
         let b: Checkable = b.parse()?;
 
-        assert!(a.convert(&b, &env));
+        assert!(a.convert(&b, &ctx, &env));
     }
 
     Ok(())

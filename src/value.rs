@@ -77,22 +77,6 @@ impl Value {
         self.quote(context).alpha_eq(&other.quote(context))
     }
 
-    pub fn lt(&self, other: &Value, context: &HashSet<Identifier>) -> bool {
-        let Value::Successor(other) = other else {
-            return false;
-        };
-
-        self.lte(other, context)
-    }
-
-    pub fn lte(&self, other: &Value, context: &HashSet<Identifier>) -> bool {
-        match (self, other) {
-            (Value::Zero, Value::Successor(_b)) => true,
-            (Value::Successor(a), Value::Successor(b)) => a.lte(b, context),
-            (a, b) => a.convert(b, context),
-        }
-    }
-
     pub fn quote(&self, context: &HashSet<Identifier>) -> Checkable {
         match self {
             Self::Lambda(closure) => {

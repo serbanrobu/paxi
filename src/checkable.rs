@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use color_eyre::{eyre::eyre, Report, Result};
-use im_rc::HashMap;
+use im_rc::{HashMap, HashSet};
 use nom::{combinator::eof, error::Error, sequence::terminated, Finish};
 
 use crate::{
@@ -27,16 +27,18 @@ pub enum Checkable {
 }
 
 impl Checkable {
-    pub fn reduce(&self, environment: &Environment) -> Checkable {
-        let ctx = environment.keys().collect();
-        self.evaluate(environment).quote(&ctx)
+    pub fn reduce(&self, context: &HashSet<Identifier>, environment: &Environment) -> Checkable {
+        self.evaluate(environment).quote(context)
     }
 
-    pub fn convert(&self, other: &Self, environment: &Environment) -> bool {
-        let ctx = environment.keys().collect();
-
+    pub fn convert(
+        &self,
+        other: &Self,
+        context: &HashSet<Identifier>,
+        environment: &Environment,
+    ) -> bool {
         self.evaluate(environment)
-            .convert(&other.evaluate(environment), &ctx)
+            .convert(&other.evaluate(environment), context)
     }
 
     pub fn alpha_eq(&self, other: &Self) -> bool {
