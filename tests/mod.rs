@@ -1,3 +1,5 @@
+#![feature(box_patterns, box_syntax)]
+
 use color_eyre::Result;
 use im_rc::HashSet;
 use pax::{checkable::Checkable, Context, Environment, Identifier, Type};
@@ -96,8 +98,8 @@ fn natural_induction() -> Result<()> {
         "λ m. indNat(_m. Nat →  Nat, λ n. n, _m. g. λ n. succ(g(n)), m)".parse()?;
 
     let t = Type::Function(
-        Type::Natural.into(),
-        Type::Function(Type::Natural.into(), Type::Natural.into()).into(),
+        box Type::Natural,
+        box Type::Function(box Type::Natural, box Type::Natural),
     );
 
     add.check(i, &t, &ctx, &env)?;

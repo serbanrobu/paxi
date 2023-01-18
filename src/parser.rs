@@ -8,7 +8,7 @@ use nom::{
     IResult,
 };
 
-use crate::{checkable::Checkable, inferable::Inferable, Identifier};
+use crate::{checkable::Checkable, inferable::Inferable, Binding, Identifier};
 
 fn parse_identifier(input: &str) -> IResult<&str, Identifier> {
     map(
@@ -20,6 +20,16 @@ fn parse_identifier(input: &str) -> IResult<&str, Identifier> {
     )(input)
 }
 
+fn binding<'a, F: 'a, T>(parser: F) -> impl FnMut(&'a str) -> IResult<&'a str, Binding<T>>
+where
+    F: FnMut(&'a str) -> IResult<&'a str, T>,
+{
+    map(
+        separated_pair(parse_identifier, ws(char('.')), parser),
+        Binding::from,
+    )
+}
+
 fn parse_inferable_atom(input: &str) -> IResult<&str, Inferable> {
     alt((
         parens(ws(parse_inferable)),
@@ -27,23 +37,17 @@ fn parse_inferable_atom(input: &str) -> IResult<&str, Inferable> {
             preceded(
                 pair(tag("indNat"), multispace0),
                 parens(tuple((
-                    ws(parse_identifier),
-                    preceded(char('.'), ws(parse_checkable)),
+                    ws(binding(parse_checkable)),
                     preceded(char(','), ws(parse_checkable)),
-                    preceded(char(','), ws(parse_identifier)),
-                    preceded(char('.'), ws(parse_identifier)),
-                    preceded(char('.'), ws(parse_checkable)),
+                    preceded(char(','), ws(binding(binding(parse_checkable)))),
                     preceded(char(','), ws(parse_checkable)),
                 ))),
             ),
-            |(x, motive, base, y, z, step, target)| Inferable::NaturalInduction {
-                x,
-                motive: motive.into(),
-                base: base.into(),
-                y,
-                z,
-                step: step.into(),
-                target: target.into(),
+            |(motive, base, step, target)| Inferable::NaturalInduction {
+                motive: box motive,
+                base: box base,
+                step: box step,
+                target: box target,
             },
         ),
         map(parse_identifier, Inferable::Variable),
@@ -60,8 +64,8 @@ fn parse_application(input: &str) -> IResult<&str, Inferable> {
             operands
                 .into_iter()
                 .fold(operator, |operator, operand| Inferable::Application {
-                    operator: operator.into(),
-                    operand: operand.into(),
+                    operator: box operator,
+                    operand: box operand,
                 })
         },
     )(input)
@@ -74,12 +78,12 @@ pub fn parse_inferable(input: &str) -> IResult<&str, Inferable> {
 fn parse_checkable_atom(input: &str) -> IResult<&str, Checkable> {
     alt((
         map(u64, |n| {
-            (0..n).fold(Checkable::Zero, |n, _| Checkable::Successor(n.into()))
+            (0..n).fold(Checkable::Zero, |n, _| Checkable::Successor(box n))
         }),
         value(Checkable::Natural, tag("Nat")),
         map(
             preceded(pair(tag("succ"), multispace0), parens(ws(parse_checkable))),
-            |n| Checkable::Successor(n.into()),
+            |n| Checkable::Successor(box n),
         ),
         map(
             preceded(pair(char('U'), multispace0), parens(ws(u8))),
@@ -100,7 +104,7 @@ fn parse_abstraction(input: &str) -> IResult<&str, Checkable> {
             ),
             |(identifier, body)| Checkable::Lambda {
                 identifier,
-                body: body.into(),
+                body: box body,
             },
         ),
         map(
@@ -115,7 +119,7 @@ fn parse_abstraction(input: &str) -> IResult<&str, Checkable> {
                 ),
                 preceded(pair(char('.'), multispace0), parse_checkable),
             ),
-            |((x, a), body)| Checkable::Pi(x, a.into(), body.into()),
+            |((x, a), body)| Checkable::Pi(box a, box Binding(x, body)),
         ),
         parse_checkable_atom,
     ))(input)
@@ -127,7 +131,7 @@ fn parse_function(input: &str) -> IResult<&str, Checkable> {
         |list: Vec<_>| {
             list.into_iter()
                 .rev()
-                .reduce(|b, a| Checkable::Function(a.into(), b.into()))
+                .reduce(|b, a| Checkable::Function(box a, box b))
                 .unwrap()
         },
     )(input)
@@ -146,7 +150,7 @@ where
 
 pub fn ws<'a, F: 'a, O>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O>
 where
-    F: Fn(&'a str) -> IResult<&'a str, O>,
+    F: FnMut(&'a str) -> IResult<&'a str, O>,
 {
     delimited(multispace0, inner, multispace0)
 }

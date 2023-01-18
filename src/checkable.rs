@@ -8,7 +8,7 @@ use crate::{
     inferable::Inferable,
     parser,
     value::{Closure, Neutral, Value},
-    Context, Environment, Identifier, Level, Type,
+    Binding, Context, Environment, Identifier, Level, Type,
 };
 
 #[derive(Clone, Debug)]
@@ -20,7 +20,7 @@ pub enum Checkable {
         body: Box<Checkable>,
     },
     Natural,
-    Pi(Identifier, Box<Checkable>, Box<Checkable>),
+    Pi(Box<Checkable>, Box<Binding<Checkable>>),
     Successor(Box<Checkable>),
     Universe(Level),
     Zero,
@@ -79,13 +79,15 @@ impl Checkable {
                 body.alpha_eq_(body_, index + 1, &ctx, &ctx_)
             }
             (Self::Natural, Self::Natural) => true,
-            (Self::Pi(x, a, body), Self::Pi(y, a_, body_)) => {
+            (Self::Pi(a, box b), Self::Pi(a_, box b_)) => {
                 a.alpha_eq_(a_, index, context, context_) && {
+                    let Binding(x, body) = b;
                     let mut ctx = context.to_owned();
                     ctx.insert(x.to_owned(), index);
 
+                    let Binding(x_, body_) = b_;
                     let mut ctx_ = context_.to_owned();
-                    ctx_.insert(y.to_owned(), index);
+                    ctx_.insert(x_.to_owned(), index);
 
                     body.alpha_eq_(body_, index + 1, &ctx, &ctx_)
                 }
@@ -133,10 +135,10 @@ impl Checkable {
                     identifier: x,
                     body,
                 },
-                Type::Function(a, b),
+                Type::Function(box a, b),
             ) => {
                 let mut ctx = context.to_owned();
-                ctx.insert(x.to_owned(), a.as_ref().to_owned());
+                ctx.insert(x.to_owned(), a.to_owned());
                 body.check(i, b, &ctx, environment)
             }
             (
@@ -144,19 +146,20 @@ impl Checkable {
                     identifier: x,
                     body,
                 },
-                Type::Pi(a, closure),
+                Type::Pi(box a, closure),
             ) => {
                 let b = closure.apply(Value::Neutral(Neutral::Variable(x.to_owned())));
 
                 let mut ctx = context.to_owned();
-                ctx.insert(x.to_owned(), a.as_ref().to_owned());
+                ctx.insert(x.to_owned(), a.to_owned());
 
                 body.check(i, &b, &ctx, environment)
             }
             (Self::Natural, Type::Universe(_i)) => Ok(()),
-            (Self::Pi(x, a, body), Type::Universe(_i)) => {
+            (Self::Pi(a, box b), Type::Universe(_i)) => {
                 a.check(i, t, context, environment)?;
 
+                let Binding(x, body) = b;
                 let mut ctx = context.to_owned();
                 ctx.insert(x.to_owned(), a.evaluate(environment));
 
@@ -171,29 +174,28 @@ impl Checkable {
 
     pub fn evaluate(&self, environment: &Environment) -> Value {
         match self {
-            Self::Function(a, b) => Value::Function(
-                a.evaluate(environment).into(),
-                b.evaluate(environment).into(),
-            ),
+            Self::Function(a, b) => {
+                Value::Function(box a.evaluate(environment), box b.evaluate(environment))
+            }
             Self::Inferable(inferable) => inferable.evaluate(environment),
             Self::Lambda {
                 identifier: x,
-                body,
+                box body,
             } => Value::Lambda(Closure {
                 environment: environment.to_owned(),
                 identifier: x.to_owned(),
-                body: body.as_ref().to_owned(),
+                body: body.to_owned(),
             }),
             Self::Natural => Value::Natural,
-            Self::Pi(x, a, body) => Value::Pi(
-                a.evaluate(environment).into(),
+            Self::Pi(a, box Binding(x, body)) => Value::Pi(
+                box a.evaluate(environment),
                 Closure {
                     environment: environment.to_owned(),
                     identifier: x.to_owned(),
-                    body: body.as_ref().to_owned(),
+                    body: body.to_owned(),
                 },
             ),
-            Self::Successor(n) => Value::Successor(n.evaluate(environment).into()),
+            Self::Successor(n) => Value::Successor(box n.evaluate(environment)),
             &Self::Universe(i) => Value::Universe(i),
             Self::Zero => Value::Zero,
         }

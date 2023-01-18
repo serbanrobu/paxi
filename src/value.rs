@@ -1,6 +1,6 @@
 use im_rc::HashSet;
 
-use crate::{checkable::Checkable, inferable::Inferable, Environment, Identifier, Level};
+use crate::{checkable::Checkable, inferable::Inferable, Binding, Environment, Identifier, Level};
 
 #[derive(Clone, Debug)]
 pub enum Neutral {
@@ -9,12 +9,9 @@ pub enum Neutral {
         operand: Box<Value>,
     },
     NaturalInduction {
-        x: Identifier,
-        motive: Box<Value>,
+        motive: Box<Binding<Value>>,
         base: Box<Value>,
-        y: Identifier,
-        z: Identifier,
-        step: Box<Value>,
+        step: Box<Binding<Binding<Value>>>,
         target: Box<Neutral>,
     },
     Variable(Identifier),
@@ -24,25 +21,19 @@ impl Neutral {
     fn quote(&self, context: &HashSet<Identifier>) -> Inferable {
         match self {
             Self::Application { operator, operand } => Inferable::Application {
-                operator: operator.quote(context).into(),
-                operand: operand.quote(context).into(),
+                operator: box operator.quote(context),
+                operand: box operand.quote(context),
             },
             Self::NaturalInduction {
-                x,
-                motive,
+                motive: box Binding(x, motive_),
                 base,
-                y,
-                z,
-                step,
+                step: box Binding(y, Binding(z, step_)),
                 target,
             } => Inferable::NaturalInduction {
-                x: x.to_owned(),
-                motive: motive.quote(context).into(),
-                base: base.quote(context).into(),
-                y: y.to_owned(),
-                z: z.to_owned(),
-                step: step.quote(context).into(),
-                target: Checkable::Inferable(target.quote(context)).into(),
+                motive: box Binding(x.to_owned(), motive_.quote(context)),
+                base: box base.quote(context),
+                step: box Binding(y.to_owned(), Binding(z.to_owned(), step_.quote(context))),
+                target: box Checkable::Inferable(target.quote(context)),
             },
             Self::Variable(x) => Inferable::Variable(x.to_owned()),
         }
@@ -66,8 +57,8 @@ impl Value {
         match self {
             Self::Lambda(closure) => closure.apply(operand),
             Self::Neutral(neutral) => Value::Neutral(Neutral::Application {
-                operator: neutral.to_owned().into(),
-                operand: operand.into(),
+                operator: box neutral.to_owned(),
+                operand: box operand,
             }),
             _ => unreachable!(),
         }
@@ -82,29 +73,27 @@ impl Value {
             Self::Lambda(closure) => {
                 let (x, body) = closure.quote(context);
 
-                if let Checkable::Inferable(Inferable::Application { operator, operand }) = &body {
-                    if let Checkable::Inferable(Inferable::Variable(y)) = operand.as_ref() {
-                        if x == *y {
-                            return Checkable::Inferable(operator.as_ref().to_owned());
-                        }
-                    }
+                if let Checkable::Inferable(Inferable::Application {
+                    box operator,
+                    operand: box Checkable::Inferable(Inferable::Variable(y)),
+                }) = &body && x == *y
+                {
+                    return Checkable::Inferable(operator.to_owned());
                 }
 
                 Checkable::Lambda {
                     identifier: x,
-                    body: body.into(),
+                    body: box body,
                 }
             }
-            Self::Function(a, b) => {
-                Checkable::Function(a.quote(context).into(), b.quote(context).into())
-            }
+            Self::Function(a, b) => Checkable::Function(box a.quote(context), box b.quote(context)),
             Self::Natural => Checkable::Natural,
             Self::Neutral(neutral) => Checkable::Inferable(neutral.quote(context)),
             Self::Pi(a, closure) => {
-                let (identifier, body) = closure.quote(context);
-                Checkable::Pi(identifier, a.quote(context).into(), body.into())
+                let (x, body) = closure.quote(context);
+                Checkable::Pi(box a.quote(context), box Binding(x, body))
             }
-            Self::Successor(n) => Checkable::Successor(n.quote(context).into()),
+            Self::Successor(n) => Checkable::Successor(box n.quote(context)),
             &Self::Universe(i) => Checkable::Universe(i),
             Self::Zero => Checkable::Zero,
         }
