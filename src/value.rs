@@ -1,6 +1,6 @@
 use im_rc::HashSet;
 
-use crate::{checkable::Checkable, inferable::Inferable, Environment, Identifier};
+use crate::{checkable::Checkable, inferable::Inferable, Environment, Identifier, Level};
 
 #[derive(Clone, Debug)]
 pub enum Neutral {
@@ -57,7 +57,7 @@ pub enum Value {
     Neutral(Neutral),
     Pi(Box<Value>, Closure),
     Successor(Box<Value>),
-    Universe(Box<Value>),
+    Universe(Level),
     Zero,
 }
 
@@ -121,7 +121,7 @@ impl Value {
                 Checkable::Pi(identifier, a.quote(context).into(), body.into())
             }
             Self::Successor(n) => Checkable::Successor(n.quote(context).into()),
-            Self::Universe(i) => Checkable::Universe(i.quote(context).into()),
+            &Self::Universe(i) => Checkable::Universe(i),
             Self::Zero => Checkable::Zero,
         }
     }

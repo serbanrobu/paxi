@@ -8,7 +8,7 @@ use crate::{
     inferable::Inferable,
     parser,
     value::{Closure, Neutral, Value},
-    Context, Environment, Identifier, Type,
+    Context, Environment, Identifier, Level, Type,
 };
 
 #[derive(Clone, Debug)]
@@ -22,7 +22,7 @@ pub enum Checkable {
     Natural,
     Pi(Identifier, Box<Checkable>, Box<Checkable>),
     Successor(Box<Checkable>),
-    Universe(Box<Checkable>),
+    Universe(Level),
     Zero,
 }
 
@@ -89,7 +89,7 @@ impl Checkable {
                 }
             }
             (Self::Successor(n), Self::Successor(n_)) => n.alpha_eq_(n_, index, context, context_),
-            (Self::Universe(i), Self::Universe(j)) => i.alpha_eq_(j, index, context, context_),
+            (Self::Universe(i), Self::Universe(j)) => i == j,
             (Self::Zero, Self::Zero) => true,
             _ => false,
         }
@@ -97,30 +97,30 @@ impl Checkable {
 
     pub fn check(
         &self,
-        level: &Value,
+        i: Level,
         t: &Type,
         context: &Context,
         environment: &Environment,
     ) -> Result<()> {
         match (self, t) {
             (Self::Function(a, b), Type::Universe(_i)) => {
-                a.check(level, t, context, environment)?;
-                b.check(level, t, context, environment)
+                a.check(i, t, context, environment)?;
+                b.check(i, t, context, environment)
             }
             (Self::Inferable(inferable), _) => {
-                let t_ = inferable.infer(level, context, environment)?;
+                let t_ = inferable.infer(i, context, environment)?;
                 let ctx = context.iter().map(|(x, _)| x.to_owned()).collect();
 
                 // Coercion
-                if let (Type::Universe(i), Type::Universe(j)) = (&t_, t) {
-                    if j.lt(i, &ctx) {
+                if let (&Type::Universe(j), &Type::Universe(j_)) = (&t_, t) {
+                    if j > j_ {
                         return Err(eyre!("type mismatch"));
                     }
 
                     return Ok(());
                 }
 
-                if !t_.convert(&t, &ctx) {
+                if !t_.convert(t, &ctx) {
                     return Err(eyre!("type mismatch"));
                 }
 
@@ -135,7 +135,7 @@ impl Checkable {
             ) => {
                 let mut ctx = context.to_owned();
                 ctx.insert(x.to_owned(), a.as_ref().to_owned());
-                body.check(level, b, &ctx, environment)
+                body.check(i, b, &ctx, environment)
             }
             (
                 Self::Lambda {
@@ -149,29 +149,19 @@ impl Checkable {
                 let mut ctx = context.to_owned();
                 ctx.insert(x.to_owned(), a.as_ref().to_owned());
 
-                body.check(level, &b, &ctx, environment)
+                body.check(i, &b, &ctx, environment)
             }
             (Self::Natural, Type::Universe(_i)) => Ok(()),
             (Self::Pi(x, a, body), Type::Universe(_i)) => {
-                a.check(level, t, context, environment)?;
+                a.check(i, t, context, environment)?;
 
                 let mut ctx = context.to_owned();
                 ctx.insert(x.to_owned(), a.evaluate(environment));
 
-                body.check(level, t, &ctx, environment)
+                body.check(i, t, &ctx, environment)
             }
-            (Self::Successor(n), Type::Natural) => n.check(level, t, context, environment),
-            (Self::Universe(i), Type::Universe(j)) => {
-                i.check(level, &Type::Natural, context, environment)?;
-                let i = i.evaluate(environment);
-                let ctx = context.iter().map(|(x, _)| x.to_owned()).collect();
-
-                if j.lte(&i, &ctx) {
-                    return Err(eyre!("type mismatch"));
-                }
-
-                Ok(())
-            }
+            (Self::Successor(n), Type::Natural) => n.check(i, t, context, environment),
+            (&Self::Universe(j), &Type::Universe(k)) if j < k => Ok(()),
             (Self::Zero, Type::Natural) => Ok(()),
             _ => Err(eyre!("type mismatch")),
         }
@@ -202,7 +192,7 @@ impl Checkable {
                 },
             ),
             Self::Successor(n) => Value::Successor(n.evaluate(environment).into()),
-            Self::Universe(i) => Value::Universe(i.evaluate(environment).into()),
+            &Self::Universe(i) => Value::Universe(i),
             Self::Zero => Value::Zero,
         }
     }

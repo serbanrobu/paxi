@@ -1,7 +1,7 @@
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, u64},
+    character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, u64, u8},
     combinator::{map, recognize, value},
     multi::{fold_many0, many0, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, tuple},
@@ -82,8 +82,8 @@ fn parse_checkable_atom(input: &str) -> IResult<&str, Checkable> {
             |n| Checkable::Successor(n.into()),
         ),
         map(
-            preceded(pair(char('U'), multispace0), parens(ws(parse_checkable))),
-            |i| Checkable::Universe(i.into()),
+            preceded(pair(char('U'), multispace0), parens(ws(u8))),
+            Checkable::Universe,
         ),
         value(Checkable::Zero, tag("zero")),
         map(parse_inferable, Checkable::Inferable),

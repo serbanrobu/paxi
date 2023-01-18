@@ -11,7 +11,7 @@ use crate::{
     checkable::Checkable,
     parser,
     value::{Closure, Neutral, Value},
-    Context, Environment, Identifier, Type,
+    Context, Environment, Identifier, Level, Type,
 };
 
 #[derive(Clone, Debug)]
@@ -100,23 +100,18 @@ impl Inferable {
         }
     }
 
-    pub fn infer(
-        &self,
-        level: &Value,
-        context: &Context,
-        environment: &Environment,
-    ) -> Result<Type> {
+    pub fn infer(&self, i: Level, context: &Context, environment: &Environment) -> Result<Type> {
         match self {
             Self::Application { operator, operand } => {
-                let t = operator.infer(level, context, environment)?;
+                let t = operator.infer(i, context, environment)?;
 
                 match t {
                     Type::Function(ref a, b) => {
-                        operand.check(level, a, context, environment)?;
+                        operand.check(i, a, context, environment)?;
                         Ok(*b)
                     }
                     Type::Pi(ref a, body) => {
-                        operand.check(level, a, context, environment)?;
+                        operand.check(i, a, context, environment)?;
                         Ok(body.apply(operand.evaluate(environment)))
                     }
                     _ => Err(eyre!("illegal application")),
@@ -132,14 +127,14 @@ impl Inferable {
                 target,
             } => {
                 motive.check(
-                    level,
-                    &Type::Universe(level.to_owned().into()),
+                    i,
+                    &Type::Universe(i),
                     &context.update(x.to_owned(), Type::Natural),
                     environment,
                 )?;
 
                 base.check(
-                    level,
+                    i,
                     &motive.evaluate(&environment.update(x.to_owned(), Value::Zero)),
                     context,
                     environment,
@@ -150,7 +145,7 @@ impl Inferable {
                 step_ctx.insert(z.to_owned(), motive.evaluate(environment));
 
                 step.check(
-                    level,
+                    i,
                     &motive.evaluate(&environment.update(
                         x.to_owned(),
                         Value::Successor(Value::Neutral(Neutral::Variable(y.to_owned())).into()),
@@ -159,7 +154,7 @@ impl Inferable {
                     environment,
                 )?;
 
-                target.check(level, &Type::Natural, context, environment)?;
+                target.check(i, &Type::Natural, context, environment)?;
 
                 Ok(
                     motive

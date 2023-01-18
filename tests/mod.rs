@@ -1,5 +1,5 @@
 use color_eyre::Result;
-use pax::{checkable::Checkable, value::Value, Context, Environment, Type};
+use pax::{checkable::Checkable, Context, Environment, Type};
 
 #[test]
 fn check() -> Result<()> {
@@ -25,24 +25,23 @@ fn check() -> Result<()> {
         (
             "λ _A. λ _B. λ a. λ _b. a",
             "Π (A : U(0)). Π (B : U(0)). A →  B →  A",
-            "1",
+            1,
         ),
-        ("U(1) →  U(2)", "U(3)", "4"),
-        ("U(0)", "U(10)", "11"),
+        ("U(1) →  U(2)", "U(3)", 4),
+        ("U(0)", "U(10)", 11),
         (
             "λ _P. λ _Q. λ pq. λ nq. λ p. nq(pq(p))",
             "Π (P : U(0)). Π (Q : U(0)). (P →  Q) →  Not(Q) →  Not(P)",
-            "1",
+            1,
         ),
     ];
 
     for (a, t, i) in samples {
         let t: Checkable = t.parse()?;
         let a: Checkable = a.parse()?;
-        let i = i.parse::<Checkable>()?.evaluate(&env);
 
-        t.check(&i, &Type::Universe(i.clone().into()), &ctx, &env)?;
-        a.check(&i, &t.evaluate(&env), &ctx, &env)?;
+        t.check(i, &Type::Universe(i), &ctx, &env)?;
+        a.check(i, &t.evaluate(&env), &ctx, &env)?;
     }
 
     Ok(())
@@ -89,7 +88,7 @@ fn convert() -> Result<()> {
 fn natural_induction() -> Result<()> {
     let mut env = Environment::new();
     let mut ctx = Context::new();
-    let level = Value::Zero;
+    let i = 0;
 
     let add: Checkable =
         "λ m. indNat(_m. Nat →  Nat, λ n. n, _m. g. λ n. succ(g(n)), m)".parse()?;
@@ -99,12 +98,12 @@ fn natural_induction() -> Result<()> {
         Type::Function(Type::Natural.into(), Type::Natural.into()).into(),
     );
 
-    add.check(&level, &t, &ctx, &env)?;
+    add.check(i, &t, &ctx, &env)?;
     ctx.insert("add".to_owned(), t);
     env.insert("add".to_owned(), add.evaluate(&env));
 
     let sum: Checkable = "add(3, 4)".parse()?;
-    sum.check(&level, &Type::Natural, &ctx, &env)?;
+    sum.check(i, &Type::Natural, &ctx, &env)?;
 
     assert!(sum.evaluate(&env).convert(
         &"7".parse::<Checkable>()?.evaluate(&env),
