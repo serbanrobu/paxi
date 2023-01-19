@@ -21,15 +21,15 @@ pub enum Inferable {
         operand: Box<Checkable>,
     },
     NaturalInduction {
+        target: Box<Inferable>,
         motive: Box<Binding<1>>,
-        base: Box<Checkable>,
-        step: Box<Binding<2>>,
-        target: Box<Checkable>,
+        zero: Box<Checkable>,
+        successor: Box<Binding<2>>,
     },
     SigmaInduction {
-        motive: Box<Binding<1>>,
-        make: Box<Binding<2>>,
         target: Box<Inferable>,
+        motive: Box<Binding<1>>,
+        pair: Box<Binding<2>>,
     },
     Variable(Identifier),
 }
@@ -58,16 +58,16 @@ impl Inferable {
             }
             (
                 Self::NaturalInduction {
-                    motive: box Binding([x], motive_),
-                    base,
-                    step: box Binding([y, z], step_),
                     target,
+                    motive: box Binding([x], motive_),
+                    zero: base,
+                    successor: box Binding([y, z], succ_),
                 },
                 Self::NaturalInduction {
-                    motive: box Binding([x_], motive__),
-                    base: base_,
-                    step: box Binding([y_, z_], step__),
                     target: target_,
+                    motive: box Binding([x_], motive__),
+                    zero: base_,
+                    successor: box Binding([y_, z_], succ__),
                 },
             ) => {
                 let mut step_ctx = context.to_owned();
@@ -78,14 +78,15 @@ impl Inferable {
                 step_ctx_.insert(y_.to_owned(), index);
                 step_ctx_.insert(z_.to_owned(), index + 1);
 
-                motive_.alpha_eq_(
-                    motive__,
-                    index + 1,
-                    &context.update(x.to_owned(), index),
-                    &context_.update(x_.to_owned(), index),
-                ) && base.alpha_eq_(base_, index, context, context_)
-                    && step_.alpha_eq_(step__, index + 2, &step_ctx, &step_ctx_)
-                    && target.alpha_eq_(target_, index, context, context_)
+                target.alpha_eq(target_, index, context, context_)
+                    && motive_.alpha_eq_(
+                        motive__,
+                        index + 1,
+                        &context.update(x.to_owned(), index),
+                        &context_.update(x_.to_owned(), index),
+                    )
+                    && base.alpha_eq_(base_, index, context, context_)
+                    && succ_.alpha_eq_(succ__, index + 2, &step_ctx, &step_ctx_)
             }
             (Self::Variable(x), Self::Variable(y)) => match (context.get(x), context_.get(y)) {
                 (None, None) => x == y,
@@ -115,8 +116,8 @@ impl Inferable {
             }
             Self::NaturalInduction {
                 motive: box Binding([x], motive_),
-                base,
-                step: box Binding([y, z], step_),
+                zero: base,
+                successor: box Binding([y, z], step_),
                 target,
             } => {
                 motive_.check(
@@ -147,15 +148,17 @@ impl Inferable {
                     environment,
                 )?;
 
-                target.check(i, &Type::Natural, context, environment)?;
+                let Type::Natural = target.infer(i, context, environment)? else {
+                    return Err(eyre!("not a natural"));
+                };
 
                 Ok(motive_
                     .evaluate(&environment.update(x.to_owned(), target.evaluate(environment))))
             }
             Self::SigmaInduction {
-                motive: box Binding([z], c),
-                make: box Binding([x, y], g),
                 target: p,
+                motive: box Binding([z], c),
+                pair: box Binding([x, y], g),
             } => {
                 let p_type = p.infer(i, context, environment)?;
 
@@ -216,29 +219,37 @@ impl Inferable {
                 _ => unreachable!(),
             },
             Self::NaturalInduction {
-                box motive,
-                base,
-                box step,
                 target,
+                box motive,
+                zero,
+                box successor,
             } => natural_induction(
+                target.evaluate(environment),
                 Closure {
                     environment: environment.to_owned(),
                     binding: motive.to_owned(),
                 },
-                base.evaluate(environment),
+                zero.evaluate(environment),
                 Closure {
                     environment: environment.to_owned(),
-                    binding: step.to_owned(),
+                    binding: successor.to_owned(),
                 },
-                target.evaluate(environment),
             ),
             Self::SigmaInduction {
-                motive,
-                make,
                 target,
-            } => {
-                todo!()
-            }
+                box motive,
+                box pair,
+            } => sigma_induction(
+                target.evaluate(environment),
+                Closure {
+                    environment: environment.to_owned(),
+                    binding: motive.to_owned(),
+                },
+                Closure {
+                    environment: environment.to_owned(),
+                    binding: pair.to_owned(),
+                },
+            ),
             Self::Variable(x) => environment
                 .get(x)
                 .cloned()
@@ -247,17 +258,34 @@ impl Inferable {
     }
 }
 
-fn natural_induction(motive: Closure<1>, base: Value, step: Closure<2>, target: Value) -> Value {
+fn sigma_induction(target: Value, motive: Closure<1>, pair: Closure<2>) -> Value {
     match target {
-        Value::Zero => base,
-        Value::Successor(box n) => step
-            .clone()
-            .evaluate([n.clone(), natural_induction(motive, base, step, n)]),
-        Value::Neutral(neutral) => Value::Neutral(Neutral::NaturalInduction {
+        Value::Pair(box a, box b) => pair.evaluate([a, b]),
+        Value::Neutral(neutral) => Value::Neutral(Neutral::SigmaInduction {
             motive,
-            base: box base,
-            step,
+            pair,
             target: box neutral,
+        }),
+        _ => unreachable!(),
+    }
+}
+
+fn natural_induction(
+    target: Value,
+    motive: Closure<1>,
+    zero: Value,
+    successor: Closure<2>,
+) -> Value {
+    match target {
+        Value::Zero => zero,
+        Value::Successor(box n) => successor
+            .clone()
+            .evaluate([n.clone(), natural_induction(n, motive, zero, successor)]),
+        Value::Neutral(neutral) => Value::Neutral(Neutral::NaturalInduction {
+            target: box neutral,
+            motive,
+            zero: box zero,
+            successor,
         }),
         _ => unreachable!(),
     }

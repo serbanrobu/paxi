@@ -95,7 +95,7 @@ fn natural_induction() -> Result<()> {
     let i = 0;
 
     let add: Checkable =
-        "λ m. indNat(_m. Nat →  Nat, λ n. n, _m. g. λ n. succ(g(n)), m)".parse()?;
+        "λ m. indNat(m, _m. Nat →  Nat, λ n. n, _m. g. λ n. succ(g(n)))".parse()?;
 
     let t = Type::Function(
         box Type::Natural,

@@ -37,17 +37,17 @@ fn parse_inferable_atom(input: &str) -> IResult<&str, Inferable> {
             preceded(
                 pair(tag("indNat"), multispace0),
                 parens(tuple((
-                    ws(parse_binding::<1>),
+                    ws(parse_inferable),
+                    preceded(char(','), ws(parse_binding::<1>)),
                     preceded(char(','), ws(parse_checkable)),
                     preceded(char(','), ws(parse_binding::<2>)),
-                    preceded(char(','), ws(parse_checkable)),
                 ))),
             ),
-            |(motive, base, step, target)| Inferable::NaturalInduction {
-                motive: box motive,
-                base: box base,
-                step: box step,
+            |(target, motive, zero, successor)| Inferable::NaturalInduction {
                 target: box target,
+                motive: box motive,
+                zero: box zero,
+                successor: box successor,
             },
         ),
         map(parse_identifier, Inferable::Variable),

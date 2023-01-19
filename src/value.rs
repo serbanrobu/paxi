@@ -9,10 +9,15 @@ pub enum Neutral {
         operand: Box<Value>,
     },
     NaturalInduction {
-        motive: Closure<1>,
-        base: Box<Value>,
-        step: Closure<2>,
         target: Box<Neutral>,
+        motive: Closure<1>,
+        zero: Box<Value>,
+        successor: Closure<2>,
+    },
+    SigmaInduction {
+        target: Box<Neutral>,
+        motive: Closure<1>,
+        pair: Closure<2>,
     },
     Variable(Identifier),
 }
@@ -26,14 +31,23 @@ impl Neutral {
             },
             Self::NaturalInduction {
                 motive,
-                base,
-                step,
+                zero: base,
+                successor: step,
                 target,
             } => Inferable::NaturalInduction {
                 motive: box motive.quote(context),
-                base: box base.quote(context),
-                step: box step.quote(context),
-                target: box Checkable::Inferable(target.quote(context)),
+                zero: box base.quote(context),
+                successor: box step.quote(context),
+                target: box target.quote(context),
+            },
+            Self::SigmaInduction {
+                motive,
+                pair: make,
+                target,
+            } => Inferable::SigmaInduction {
+                motive: box motive.quote(context),
+                pair: box make.quote(context),
+                target: box target.quote(context),
             },
             Self::Variable(x) => Inferable::Variable(x.to_owned()),
         }
