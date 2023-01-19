@@ -21,10 +21,15 @@ pub enum Inferable {
         operand: Box<Checkable>,
     },
     NaturalInduction {
-        motive: Box<Binding<Checkable>>,
+        motive: Box<Binding<1>>,
         base: Box<Checkable>,
-        step: Box<Binding<Binding<Checkable>>>,
+        step: Box<Binding<2>>,
         target: Box<Checkable>,
+    },
+    SigmaInduction {
+        motive: Box<Binding<1>>,
+        make: Box<Binding<2>>,
+        target: Box<Inferable>,
     },
     Variable(Identifier),
 }
@@ -53,15 +58,15 @@ impl Inferable {
             }
             (
                 Self::NaturalInduction {
-                    motive: box Binding(x, motive_),
+                    motive: box Binding([x], motive_),
                     base,
-                    step: box Binding(y, Binding(z, step_)),
+                    step: box Binding([y, z], step_),
                     target,
                 },
                 Self::NaturalInduction {
-                    motive: box Binding(x_, motive__),
+                    motive: box Binding([x_], motive__),
                     base: base_,
-                    step: box Binding(y_, Binding(z_, step__)),
+                    step: box Binding([y_, z_], step__),
                     target: target_,
                 },
             ) => {
@@ -103,15 +108,15 @@ impl Inferable {
                     }
                     Type::Pi(ref a, body) => {
                         operand.check(i, a, context, environment)?;
-                        Ok(body.apply(operand.evaluate(environment)))
+                        Ok(body.evaluate([operand.evaluate(environment)]))
                     }
                     _ => Err(eyre!("illegal application")),
                 }
             }
             Self::NaturalInduction {
-                motive: box Binding(x, motive_),
+                motive: box Binding([x], motive_),
                 base,
-                step: box Binding(y, Binding(z, step_)),
+                step: box Binding([y, z], step_),
                 target,
             } => {
                 motive_.check(
@@ -147,6 +152,49 @@ impl Inferable {
                 Ok(motive_
                     .evaluate(&environment.update(x.to_owned(), target.evaluate(environment))))
             }
+            Self::SigmaInduction {
+                motive: box Binding([z], c),
+                make: box Binding([x, y], g),
+                target: p,
+            } => {
+                let p_type = p.infer(i, context, environment)?;
+
+                let Type::Sigma(box a, b) = p_type.clone() else {
+                    return Err(eyre!("illegal sigma induction"));
+                };
+
+                c.check(
+                    i,
+                    &Type::Universe(i),
+                    &context.update(z.to_owned(), p_type),
+                    environment,
+                )?;
+
+                g.check(
+                    i,
+                    &c.evaluate(&environment.update(
+                        z.to_owned(),
+                        Value::Pair(
+                            box Value::Neutral(Neutral::Variable(x.to_owned())),
+                            box Value::Neutral(Neutral::Variable(y.to_owned())),
+                        ),
+                    )),
+                    &{
+                        let mut ctx = context.to_owned();
+                        ctx.insert(x.to_owned(), a);
+
+                        ctx.insert(
+                            y.to_owned(),
+                            b.evaluate([Value::Neutral(Neutral::Variable(x.to_owned()))]),
+                        );
+
+                        ctx
+                    },
+                    environment,
+                )?;
+
+                Ok(c.evaluate(&environment.update(z.to_owned(), p.evaluate(environment))))
+            }
             Self::Variable(x) => context.get(x).cloned().wrap_err("unknown identifier"),
         }
     }
@@ -156,8 +204,7 @@ impl Inferable {
             Self::Application { operator, operand } => match operator.evaluate(environment) {
                 Value::Lambda(Closure {
                     environment: mut env,
-                    identifier: x,
-                    body,
+                    binding: Binding([x], body),
                 }) => {
                     env.insert(x, operand.evaluate(environment));
                     body.evaluate(&env)
@@ -169,17 +216,29 @@ impl Inferable {
                 _ => unreachable!(),
             },
             Self::NaturalInduction {
-                motive,
+                box motive,
                 base,
-                step,
+                box step,
                 target,
             } => natural_induction(
-                motive,
-                base,
-                step,
+                Closure {
+                    environment: environment.to_owned(),
+                    binding: motive.to_owned(),
+                },
+                base.evaluate(environment),
+                Closure {
+                    environment: environment.to_owned(),
+                    binding: step.to_owned(),
+                },
                 target.evaluate(environment),
-                environment,
             ),
+            Self::SigmaInduction {
+                motive,
+                make,
+                target,
+            } => {
+                todo!()
+            }
             Self::Variable(x) => environment
                 .get(x)
                 .cloned()
@@ -188,41 +247,18 @@ impl Inferable {
     }
 }
 
-fn natural_induction(
-    motive: &Binding<Checkable>,
-    base: &Checkable,
-    step: &Binding<Binding<Checkable>>,
-    target: Value,
-    environment: &Environment,
-) -> Value {
+fn natural_induction(motive: Closure<1>, base: Value, step: Closure<2>, target: Value) -> Value {
     match target {
-        Value::Zero => base.evaluate(environment),
-        Value::Successor(box n) => {
-            let Binding(y, Binding(z, step_)) = step;
-            let mut env = environment.to_owned();
-            env.insert(y.to_owned(), n.clone());
-
-            env.insert(
-                z.to_owned(),
-                natural_induction(motive, base, step, n, environment),
-            );
-
-            step_.evaluate(&env)
-        }
-        Value::Neutral(neutral) => {
-            let Binding(x, motive_) = motive;
-            let Binding(y, Binding(z, step_)) = step;
-
-            Value::Neutral(Neutral::NaturalInduction {
-                motive: box Binding(x.to_owned(), motive_.evaluate(environment)),
-                base: box base.evaluate(environment),
-                step: box Binding(
-                    y.to_owned(),
-                    Binding(z.to_owned(), step_.evaluate(environment)),
-                ),
-                target: box neutral,
-            })
-        }
+        Value::Zero => base,
+        Value::Successor(box n) => step
+            .clone()
+            .evaluate([n.clone(), natural_induction(motive, base, step, n)]),
+        Value::Neutral(neutral) => Value::Neutral(Neutral::NaturalInduction {
+            motive,
+            base: box base,
+            step,
+            target: box neutral,
+        }),
         _ => unreachable!(),
     }
 }

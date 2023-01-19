@@ -5,6 +5,7 @@ pub mod inferable;
 pub mod parser;
 pub mod value;
 
+use checkable::Checkable;
 use im_rc::HashMap;
 use value::Value;
 
@@ -19,10 +20,4 @@ pub type Context = HashMap<Identifier, Type>;
 pub type Environment = HashMap<Identifier, Value>;
 
 #[derive(Debug, Clone)]
-pub struct Binding<T>(Identifier, T);
-
-impl<T> From<(Identifier, T)> for Binding<T> {
-    fn from((x, t): (Identifier, T)) -> Self {
-        Binding(x, t)
-    }
-}
+pub struct Binding<const N: usize>([Identifier; N], Checkable);

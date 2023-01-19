@@ -3,8 +3,8 @@ use nom::{
     bytes::complete::tag,
     character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, u64, u8},
     combinator::{map, recognize, value},
-    multi::{fold_many0, many0, separated_list1},
-    sequence::{delimited, pair, preceded, separated_pair, tuple},
+    multi::{fold_many0, many0, many_m_n, separated_list1},
+    sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     IResult,
 };
 
@@ -20,14 +20,14 @@ fn parse_identifier(input: &str) -> IResult<&str, Identifier> {
     )(input)
 }
 
-fn binding<'a, F: 'a, T>(parser: F) -> impl FnMut(&'a str) -> IResult<&'a str, Binding<T>>
-where
-    F: FnMut(&'a str) -> IResult<&'a str, T>,
-{
+fn parse_binding<const N: usize>(input: &str) -> IResult<&str, Binding<N>> {
     map(
-        separated_pair(parse_identifier, ws(char('.')), parser),
-        Binding::from,
-    )
+        pair(
+            many_m_n(N, N, terminated(parse_identifier, ws(char('.')))),
+            parse_checkable,
+        ),
+        |(xs, t)| Binding(xs.try_into().unwrap(), t),
+    )(input)
 }
 
 fn parse_inferable_atom(input: &str) -> IResult<&str, Inferable> {
@@ -37,9 +37,9 @@ fn parse_inferable_atom(input: &str) -> IResult<&str, Inferable> {
             preceded(
                 pair(tag("indNat"), multispace0),
                 parens(tuple((
-                    ws(binding(parse_checkable)),
+                    ws(parse_binding::<1>),
                     preceded(char(','), ws(parse_checkable)),
-                    preceded(char(','), ws(binding(binding(parse_checkable)))),
+                    preceded(char(','), ws(parse_binding::<2>)),
                     preceded(char(','), ws(parse_checkable)),
                 ))),
             ),
@@ -98,14 +98,8 @@ fn parse_checkable_atom(input: &str) -> IResult<&str, Checkable> {
 fn parse_abstraction(input: &str) -> IResult<&str, Checkable> {
     alt((
         map(
-            pair(
-                preceded(pair(char('λ'), multispace1), parse_identifier),
-                preceded(pair(char('.'), multispace0), parse_checkable),
-            ),
-            |(identifier, body)| Checkable::Lambda {
-                identifier,
-                body: box body,
-            },
+            preceded(pair(char('λ'), multispace1), parse_binding),
+            |binding| Checkable::Lambda(box binding),
         ),
         map(
             pair(
@@ -119,7 +113,7 @@ fn parse_abstraction(input: &str) -> IResult<&str, Checkable> {
                 ),
                 preceded(pair(char('.'), multispace0), parse_checkable),
             ),
-            |((x, a), body)| Checkable::Pi(box a, box Binding(x, body)),
+            |((x, a), body)| Checkable::Pi(box a, box Binding([x], body)),
         ),
         parse_checkable_atom,
     ))(input)

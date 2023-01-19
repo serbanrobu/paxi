@@ -9,9 +9,9 @@ pub enum Neutral {
         operand: Box<Value>,
     },
     NaturalInduction {
-        motive: Box<Binding<Value>>,
+        motive: Closure<1>,
         base: Box<Value>,
-        step: Box<Binding<Binding<Value>>>,
+        step: Closure<2>,
         target: Box<Neutral>,
     },
     Variable(Identifier),
@@ -25,14 +25,14 @@ impl Neutral {
                 operand: box operand.quote(context),
             },
             Self::NaturalInduction {
-                motive: box Binding(x, motive_),
+                motive,
                 base,
-                step: box Binding(y, Binding(z, step_)),
+                step,
                 target,
             } => Inferable::NaturalInduction {
-                motive: box Binding(x.to_owned(), motive_.quote(context)),
+                motive: box motive.quote(context),
                 base: box base.quote(context),
-                step: box Binding(y.to_owned(), Binding(z.to_owned(), step_.quote(context))),
+                step: box step.quote(context),
                 target: box Checkable::Inferable(target.quote(context)),
             },
             Self::Variable(x) => Inferable::Variable(x.to_owned()),
@@ -42,11 +42,14 @@ impl Neutral {
 
 #[derive(Clone, Debug)]
 pub enum Value {
-    Lambda(Closure),
+    Lambda(Closure<1>),
     Function(Box<Value>, Box<Value>),
     Natural,
     Neutral(Neutral),
-    Pi(Box<Value>, Closure),
+    Pair(Box<Value>, Box<Value>),
+    Pi(Box<Value>, Closure<1>),
+    Product(Box<Value>, Box<Value>),
+    Sigma(Box<Value>, Closure<1>),
     Successor(Box<Value>),
     Universe(Level),
     Zero,
@@ -55,7 +58,7 @@ pub enum Value {
 impl Value {
     pub fn apply(&self, operand: Value) -> Value {
         match self {
-            Self::Lambda(closure) => closure.apply(operand),
+            Self::Lambda(closure) => closure.evaluate([operand]),
             Self::Neutral(neutral) => Value::Neutral(Neutral::Application {
                 operator: box neutral.to_owned(),
                 operand: box operand,
@@ -71,7 +74,7 @@ impl Value {
     pub fn quote(&self, context: &HashSet<Identifier>) -> Checkable {
         match self {
             Self::Lambda(closure) => {
-                let (x, body) = closure.quote(context);
+                let Binding([x], body) = closure.quote(context);
 
                 if let Checkable::Inferable(Inferable::Application {
                     box operator,
@@ -81,17 +84,16 @@ impl Value {
                     return Checkable::Inferable(operator.to_owned());
                 }
 
-                Checkable::Lambda {
-                    identifier: x,
-                    body: box body,
-                }
+                Checkable::Lambda(box Binding([x], body))
             }
             Self::Function(a, b) => Checkable::Function(box a.quote(context), box b.quote(context)),
             Self::Natural => Checkable::Natural,
             Self::Neutral(neutral) => Checkable::Inferable(neutral.quote(context)),
-            Self::Pi(a, closure) => {
-                let (x, body) = closure.quote(context);
-                Checkable::Pi(box a.quote(context), box Binding(x, body))
+            Self::Pair(a, b) => Checkable::Pair(box a.quote(context), box b.quote(context)),
+            Self::Pi(a, closure) => Checkable::Pi(box a.quote(context), box closure.quote(context)),
+            Self::Product(a, b) => Checkable::Product(box a.quote(context), box b.quote(context)),
+            Self::Sigma(a, closure) => {
+                Checkable::Sigma(box a.quote(context), box closure.quote(context))
             }
             Self::Successor(n) => Checkable::Successor(box n.quote(context)),
             &Self::Universe(i) => Checkable::Universe(i),
@@ -101,10 +103,9 @@ impl Value {
 }
 
 #[derive(Clone, Debug)]
-pub struct Closure {
+pub struct Closure<const N: usize> {
     pub environment: Environment,
-    pub identifier: Identifier,
-    pub body: Checkable,
+    pub binding: Binding<N>,
 }
 
 fn freshen(identifier: &Identifier, context: &HashSet<Identifier>) -> Identifier {
@@ -118,19 +119,26 @@ fn freshen(identifier: &Identifier, context: &HashSet<Identifier>) -> Identifier
     x
 }
 
-impl Closure {
-    pub fn apply(&self, operand: Value) -> Value {
+impl<const N: usize> Closure<N> {
+    pub fn evaluate(&self, arguments: [Value; N]) -> Value {
+        let Binding(xs, body) = &self.binding;
         let mut env = self.environment.to_owned();
-        env.insert(self.identifier.to_owned(), operand);
-        self.body.to_owned().evaluate(&env)
+
+        for i in 0..N {
+            env.insert(xs[i].to_owned(), arguments[i].clone());
+        }
+
+        body.to_owned().evaluate(&env)
     }
 
-    fn quote(&self, context: &HashSet<Identifier>) -> (Identifier, Checkable) {
-        let x = freshen(&self.identifier, context);
-        let body = self.apply(Value::Neutral(Neutral::Variable(x.clone())));
-        let mut ctx = context.to_owned();
-        ctx.insert(x.clone());
+    fn quote(&self, context: &HashSet<Identifier>) -> Binding<N> {
+        let Binding(xs, _body) = &self.binding;
+        let ys = xs.to_owned().map(|x| freshen(&x, context));
 
-        (x, body.quote(&ctx))
+        let mut ctx = context.to_owned();
+        ctx.extend(&ys);
+
+        let body = self.evaluate(ys.clone().map(|y| Value::Neutral(Neutral::Variable(y))));
+        Binding(ys, body.quote(&ctx))
     }
 }
